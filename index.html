@@ -12,12 +12,25 @@
     }
     canvas {
       display: block;
-      background-color: #f8e29b;
-      cursor: pointer;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
     }
     #info {
       text-align: center;
       font-size: 18px;
+      margin-top: 60px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 8px;
+      padding: 4px 0;
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: auto;
+      min-width: 220px;
     }
     #score-board {
       display: flex;
@@ -25,6 +38,16 @@
       gap: 30px;
       font-size: 16px;
       align-items: center;
+      background: rgba(255,255,255,0.7);
+      border-radius: 10px;
+      padding: 6px 18px;
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: auto;
+      min-width: 320px;
     }
     .player-label {
       display: flex;
@@ -35,12 +58,29 @@
       width: 20px;
       height: 20px;
     }
+    #play-again-btn {
+      display: none;      position: fixed;
+      left: 50%;
+      top: 60%;
+      transform: translate(-50%, -50%);
+      margin: 0;
+      padding: 16px 36px;
+      font-size: 22px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    #play-again-btn:hover {
+      background-color: #0056b3;
+    }
   </style>
 </head>
 <body>
 
-<canvas id="beach"></canvas>
-<div id="info">Player 1's turn</div>
 <div id="score-board">
   <div class="player-label">
     <canvas id="icon1" class="icon-canvas"></canvas>
@@ -51,6 +91,9 @@
     Player 2 Score: <span id="player2-score">0</span>
   </div>
 </div>
+<div id="info">Player 1's turn</div>
+<canvas id="beach"></canvas>
+<button id="play-again-btn">Play Again</button>
 
 <audio id="wave-sound" loop>
   <source src="sounds/ocean-wave-1.mp3" type="audio/mp3" />
@@ -85,6 +128,23 @@
   let waveOffset = 0;
   let seaRise = false;
   let highlightCircle = null;
+  let playAgainShown = false;
+
+  function animate() {
+    waveOffset += 0.5;
+    if (seaRise && seaLevel < canvas.height + 30) {
+      seaLevel += 1.5;
+    }
+    draw();
+
+    // Show Play Again button when sea covers the screen
+    if (seaRise && seaLevel >= canvas.height + 30 && !playAgainShown) {
+      playAgainShown = true;
+      document.getElementById("play-again-btn").style.display = "block";
+    }
+
+    requestAnimationFrame(animate);
+  }
 
   const waveSound = document.getElementById("wave-sound");
   waveSound.volume = 0.3;
@@ -207,13 +267,6 @@
     ctx.fill();
   }
 
-  function animate() {
-    waveOffset += 0.5;
-    if (seaRise && seaLevel < canvas.height + 30) seaLevel += 1.5;
-    draw();
-    requestAnimationFrame(animate);
-  }
-
   function getMinDistance(x, y) {
     if (people.length === 0) return Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
     return Math.min(...people.map(p => Math.hypot(p.x - x, p.y - y)));
@@ -289,6 +342,31 @@
     } else {
       document.getElementById("info").innerHTML = `Player ${currentPlayer}'s turn`;
     }
+  });
+
+  document.getElementById("play-again-btn").addEventListener("click", () => {
+    // Reset all game state
+    people.length = 0;
+    seaItems.length = 0;
+    beachPeople.length = 0;
+    clouds.length = 0;
+    currentPlayer = 1;
+    totalScore1 = 0;
+    totalScore2 = 0;
+    gameEnded = false;
+    seaLevel = 50;
+    waveOffset = 0;
+    seaRise = false;
+    highlightCircle = null;
+    playAgainShown = false;
+
+    document.getElementById("player1-score").innerText = "0";
+    document.getElementById("player2-score").innerText = "0";
+    document.getElementById("info").innerHTML = "Player 1's turn";
+    document.getElementById("play-again-btn").style.display = "none";
+
+    if (ENABLE_SEA_ITEMS) spawnSeaItems();
+    if (ENABLE_CLOUD_SHADOWS) spawnClouds();
   });
 
   function showFinalScore() {
