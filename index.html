@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Beach Space Game</title>
+  <style>
+    body {
+      background-color: white;
+      margin: 0;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      background-color: #f8e29b;
+      cursor: pointer;
+    }
+    #info {
+      text-align: center;
+      font-size: 18px;
+    }
+    #score-board {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      font-size: 16px;
+      align-items: center;
+    }
+    .player-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .icon-canvas {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="beach"></canvas>
+<div id="info">Player 1's turn</div>
+<div id="score-board">
+  <div class="player-label">
+    <canvas id="icon1" class="icon-canvas"></canvas>
+    Player 1 Score: <span id="player1-score">0</span>
+  </div>
+  <div class="player-label">
+    <canvas id="icon2" class="icon-canvas"></canvas>
+    Player 2 Score: <span id="player2-score">0</span>
+  </div>
+</div>
+
+<audio id="wave-sound" loop>
+  <source src="sounds/ocean-wave-1.mp3" type="audio/mp3" />
+</audio>
+
+<script>
+  const ENABLE_SEA_ITEMS = true;
+  const ENABLE_BEACH_PEOPLE = true;
+  const ENABLE_CLOUD_SHADOWS = true;
+
+  const canvas = document.getElementById("beach");
+  const ctx = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = Math.floor(window.innerWidth * 0.625); // 16:10 ratio
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  const people = [];
+  const seaItems = [];
+  const beachPeople = [];
+  const clouds = [];
+
+  let currentPlayer = 1;
+  const maxTurns = 10;
+  let totalScore1 = 0;
+  let totalScore2 = 0;
+  let gameEnded = false;
+  let seaLevel = 50;
+  let waveOffset = 0;
+  let seaRise = false;
+  let highlightCircle = null;
+
+  const waveSound = document.getElementById("wave-sound");
+  waveSound.volume = 0.3;
+  waveSound.play().catch(() => {});
+  document.addEventListener("click", () => {
+    if (waveSound.paused) waveSound.play();
+  }, { once: true });
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#f8e29b";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Cloud shadows
+    if (ENABLE_CLOUD_SHADOWS) {
+      ctx.save();
+      ctx.globalAlpha = 0.1;
+      ctx.fillStyle = "#000";
+      for (const cloud of clouds) {
+        ctx.beginPath();
+        ctx.ellipse(cloud.x, cloud.y, cloud.w, cloud.h, 0, 0, Math.PI * 2);
+        ctx.fill();
+        cloud.x += cloud.speed;
+        if (cloud.x - cloud.w > canvas.width) {
+          cloud.x = -cloud.w;
+          cloud.y = Math.random() * canvas.height * 0.5;
+        }
+      }
+      ctx.restore();
+    }
+
+    if (ENABLE_BEACH_PEOPLE) {
+      for (const b of beachPeople) {
+        if (b.progress < 1) {
+          b.progress += 0.02;
+          const ease = b.progress * b.progress * (3 - 2 * b.progress);
+          b.x = b.startX + (b.targetX - b.startX) * ease;
+          b.baseY = b.startY + (b.targetY - b.startY) * ease;
+        }
+        const bob = Math.sin(b.phase) * 1.5;
+        b.phase += 0.05;
+        ctx.beginPath();
+        ctx.arc(b.x, b.baseY + bob, 6, 0, Math.PI * 2);
+        ctx.fillStyle = b.color;
+        ctx.fill();
+      }
+    }
+
+    for (const p of people) {
+      const hue = p.player === 1 ? 0 : 220;
+      drawHexParasol(p.x, p.y - 10, 20, hue, 80, 50);
+      ctx.fillStyle = "black";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(p.optimalScore.toFixed(0), p.x, p.y - 30);
+    }
+
+    if (highlightCircle) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(128, 128, 128, ${highlightCircle.opacity})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(highlightCircle.x, highlightCircle.y, highlightCircle.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      highlightCircle.opacity -= highlightCircle.fadeSpeed;
+      if (highlightCircle.opacity <= 0) highlightCircle = null;
+    }
+
+    if (ENABLE_SEA_ITEMS) {
+      for (const item of seaItems) {
+        ctx.font = "20px serif";
+        ctx.fillText(item.icon, item.x, item.y);
+      }
+    }
+
+    drawWaves();
+  }
+
+  function drawHexParasol(x, y, radius, hue, saturation, lightness) {
+    for (let i = 0; i < 6; i++) {
+      const angle1 = (Math.PI * 2 * i) / 6;
+      const angle2 = (Math.PI * 2 * (i + 1)) / 6;
+      const x1 = x + radius * Math.cos(angle1);
+      const y1 = y + radius * Math.sin(angle1);
+      const x2 = x + radius * Math.cos(angle2);
+      const y2 = y + radius * Math.sin(angle2);
+      const segmentLightness = lightness + (i % 2 === 0 ? -10 : 10);
+      ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${segmentLightness}%)`;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawWaves() {
+    const seaTop = canvas.height - seaLevel;
+    ctx.fillStyle = "#87CEFA";
+    ctx.fillRect(0, seaTop, canvas.width, seaLevel);
+
+    ctx.beginPath();
+    const amp = 6, freq = 0.04;
+    ctx.moveTo(0, seaTop);
+    for (let x = 0; x <= canvas.width; x++) {
+      const y = seaTop + Math.sin((x + waveOffset) * freq) * amp;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    ctx.fillStyle = "#1E90FF";
+    ctx.fill();
+  }
+
+  function animate() {
+    waveOffset += 0.5;
+    if (seaRise && seaLevel < canvas.height + 30) seaLevel += 1.5;
+    draw();
+    requestAnimationFrame(animate);
+  }
+
+  function getMinDistance(x, y) {
+    if (people.length === 0) return Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
+    return Math.min(...people.map(p => Math.hypot(p.x - x, p.y - y)));
+  }
+
+  function getBestPossibleDistance() {
+    let maxDist = 0;
+    const sampleRate = 30;
+    for (let x = 0; x < canvas.width; x += sampleRate) {
+      for (let y = 0; y < canvas.height; y += sampleRate) {
+        const d = getMinDistance(x, y);
+        if (d > maxDist) maxDist = d;
+      }
+    }
+    return maxDist;
+  }
+
+  canvas.addEventListener("click", (e) => {
+    if (gameEnded) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    for (let i = seaItems.length - 1; i >= 0; i--) {
+      const item = seaItems[i];
+      const dx = x - item.x;
+      const dy = y - item.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 15) {
+        handleSeaItemClick(item);
+        seaItems.splice(i, 1);
+        return;
+      }
+    }
+
+    if (people.length >= maxTurns * 2) return;
+
+    const actualDistance = getMinDistance(x, y);
+    const bestDistance = getBestPossibleDistance();
+    const score = (actualDistance / bestDistance) * 100;
+
+    const person = { x, y, player: currentPlayer, distance: actualDistance, optimalScore: score };
+    people.push(person);
+
+    if (currentPlayer === 1) {
+      totalScore1 += score;
+      document.getElementById("player1-score").innerText = totalScore1.toFixed(1);
+    } else {
+      totalScore2 += score;
+      document.getElementById("player2-score").innerText = totalScore2.toFixed(1);
+    }
+
+    if (ENABLE_BEACH_PEOPLE) spawnBeachPeopleAround(x, y);
+
+    if (people.length > 1) {
+      let minDist = Infinity;
+      for (const p of people) {
+        if (p === person) continue;
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist < Infinity) {
+        highlightCircle = { x, y, radius: minDist, opacity: 1, fadeSpeed: 0.02 };
+      }
+    }
+
+    currentPlayer = currentPlayer === 1 ? 2 : 1;
+
+    if (people.length >= maxTurns * 2) {
+      gameEnded = true;
+      document.getElementById("info").innerHTML = showFinalScore();
+      setTimeout(() => seaRise = true, 1500);
+    } else {
+      document.getElementById("info").innerHTML = `Player ${currentPlayer}'s turn`;
+    }
+  });
+
+  function showFinalScore() {
+    const avg1 = totalScore1 / maxTurns;
+    const avg2 = totalScore2 / maxTurns;
+    return `Game Over.<br>Player 1: ${avg1.toFixed(1)} pts vs Player 2: ${avg2.toFixed(1)} pts — ` +
+      (avg1 > avg2 ? "🏆 Player 1 Wins!" : avg2 > avg1 ? "🏆 Player 2 Wins!" : "It's a Tie!");
+  }
+
+  function handleSeaItemClick(item) {
+    if (item.icon === "🐚") {
+      alert("You found a shell! +10 bonus points");
+      if (currentPlayer === 1) totalScore1 += 10;
+      else totalScore2 += 10;
+    } else if (item.icon === "🐠") {
+      alert("The fish swam away!");
+    } else if (item.icon === "🐙") {
+      alert("The octopus inked your scores!");
+      totalScore1 += 5;
+      totalScore2 += 5;
+    }
+    document.getElementById("player1-score").innerText = totalScore1.toFixed(1);
+    document.getElementById("player2-score").innerText = totalScore2.toFixed(1);
+  }
+
+  function spawnBeachPeopleAround(x, y) {
+    const count = Math.floor(Math.random() * 3) + 1;
+    const delay = 600;
+    setTimeout(() => {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * 2 * Math.PI;
+        const distance = 25 + Math.random() * 10;
+        const tx = x + distance * Math.cos(angle);
+        const ty = y + distance * Math.sin(angle);
+        beachPeople.push({
+          startX: x,
+          startY: y,
+          targetX: tx,
+          targetY: ty,
+          x: x,
+          y: y,
+          baseY: y,
+          phase: Math.random() * Math.PI * 2,
+          color: `hsl(${Math.random() * 360}, 60%, 70%)`,
+          progress: 0
+        });
+      }
+    }, delay);
+  }
+
+  function spawnSeaItems() {
+    const seaEmojis = ["🐚", "🐠", "🐙"];
+    for (let i = 0; i < 5; i++) {
+      const x = Math.random() * canvas.width;
+      const y = canvas.height - (Math.random() * 40 + 10);
+      const icon = seaEmojis[Math.floor(Math.random() * seaEmojis.length)];
+      seaItems.push({ x, y, icon });
+    }
+  }
+
+  function spawnClouds() {
+    for (let i = 0; i < 4; i++) {
+      clouds.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.5,
+        w: 100 + Math.random() * 100,
+        h: 30 + Math.random() * 20,
+        speed: 0.2 + Math.random() * 0.3
+      });
+    }
+  }
+
+  function drawMiniParasol(id, hue) {
+    const mini = document.getElementById(id);
+    const miniCtx = mini.getContext("2d");
+    miniCtx.clearRect(0, 0, mini.width, mini.height);
+    for (let i = 0; i < 6; i++) {
+      const a1 = (Math.PI * 2 * i) / 6;
+      const a2 = (Math.PI * 2 * (i + 1)) / 6;
+      const x1 = 10 + 8 * Math.cos(a1);
+      const y1 = 10 + 8 * Math.sin(a1);
+      const x2 = 10 + 8 * Math.cos(a2);
+      const y2 = 10 + 8 * Math.sin(a2);
+      const lightness = 50 + (i % 2 === 0 ? -10 : 10);
+      miniCtx.fillStyle = `hsl(${hue}, 80%, ${lightness}%)`;
+      miniCtx.beginPath();
+      miniCtx.moveTo(10, 10);
+      miniCtx.lineTo(x1, y1);
+      miniCtx.lineTo(x2, y2);
+      miniCtx.closePath();
+      miniCtx.fill();
+    }
+    miniCtx.fillStyle = "#fff";
+    miniCtx.beginPath();
+    miniCtx.arc(10, 10, 2, 0, Math.PI * 2);
+    miniCtx.fill();
+  }
+
+  drawMiniParasol("icon1", 0);
+  drawMiniParasol("icon2", 220);
+
+  if (ENABLE_SEA_ITEMS) spawnSeaItems();
+  if (ENABLE_CLOUD_SHADOWS) spawnClouds();
+
+  animate();
+</script>
+
+</body>
+</html>
